@@ -1,0 +1,106 @@
+import threading, time
+
+import PySide6.QtCore as Qtc
+import PySide6.QtGui as Qtg
+import PySide6.QtWidgets as Qtw
+
+from model.music_player import MusicPlayer # is this necessary?
+from model.library import Library
+
+class TopBar(Qtw.QWidget):
+    def __init__(self, music_player, library, parent_widget):
+        super().__init__()
+        self.setMaximumHeight(200)
+        self.parent_widget = parent_widget
+
+        self.h_layout = Qtw.QHBoxLayout()
+        self.setLayout(self.h_layout)
+        self.buttons_h_layout = Qtw.QHBoxLayout()
+        self.back_button = Qtw.QPushButton("<<")
+        self.play_button = Qtw.QPushButton("\u25B6")
+        self.pause_button = Qtw.QPushButton("\u25AE\u200A\u25AE")
+        self.next_button = Qtw.QPushButton(">>")
+
+        self.dummy_mid_display = Qtw.QFrame()
+        self.song_title_text = Qtw.QLabel("Song Title - Artist Title")
+        self.seek_bar = Qtw.QSlider()
+        self.dummy_mid_display_v_layout = Qtw.QVBoxLayout()
+
+        self.volume_slider = Qtw.QSlider()
+
+        self.music_player = None
+        self.library = None
+        self.is_shutting_down = False
+
+        self.play_button.clicked.connect(self.on_play_button_clicked)
+        self.pause_button.clicked.connect(self.on_pause_button_clicked)
+
+        self.buttons_h_layout.addWidget(self.back_button)
+        self.buttons_h_layout.addWidget(self.play_button)
+        self.buttons_h_layout.addWidget(self.pause_button)
+        self.buttons_h_layout.addWidget(self.next_button)
+
+        self.dummy_mid_display.setFrameStyle(Qtw.QFrame.Shape.Panel | Qtw.QFrame.Shadow.Sunken)
+        self.song_title_text.setAlignment(Qtc.Qt.AlignmentFlag.AlignCenter)
+        self.seek_bar.setOrientation(Qtc.Qt.Orientation.Horizontal)
+        self.seek_bar.setRange(0,1000)
+        self.dummy_mid_display_v_layout.addWidget(self.song_title_text)
+        self.dummy_mid_display_v_layout.addWidget(self.seek_bar)
+        self.dummy_mid_display.setLayout(self.dummy_mid_display_v_layout)
+
+        self.volume_slider.setOrientation(Qtc.Qt.Orientation.Horizontal)
+        self.volume_slider.setMaximumWidth(200)
+        self.volume_slider.setRange(0,100)
+        self.volume_slider.setValue(100)
+
+        # where to put this?
+        self.temp_right_v_layout = Qtw.QVBoxLayout()
+        self.add_button = Qtw.QPushButton("+")
+        self.add_button.clicked.connect(self.add_local)
+        self.search_button = Qtw.QPushButton("\uDD0D")
+        self.search_button.clicked.connect(self.parent_widget.toggle_search_view)
+        self.temp_right_v_layout.addWidget(self.add_button)
+        self.temp_right_v_layout.addWidget(self.search_button)
+
+        self.h_layout.addLayout(self.buttons_h_layout)
+        self.h_layout.addWidget(self.dummy_mid_display)
+        self.h_layout.addWidget(self.volume_slider)
+        self.h_layout.addLayout(self.temp_right_v_layout)
+
+        self.music_player = music_player
+        self.library = library
+
+        seek_bar_thread = threading.Thread(target=self.update_seek_bar)
+        seek_bar_thread.start()
+
+    def set_is_shutting_down(self, boolean):
+        self.is_shutting_down = boolean
+        return
+
+    def on_play_button_clicked(self):
+        pass
+
+    def on_pause_button_clicked(self):
+        self.music_player.pause_all()
+        return
+
+    def update_seek_bar(self):
+        while not self.is_shutting_down:
+            curr_slider_position = self.seek_bar.value()
+
+            if self.seek_bar.isSliderDown():
+                self.music_player.seek_to_position(curr_slider_position)
+            else:
+                new_position = self.music_player.get_new_slider_position(curr_slider_position)
+                self.seek_bar.setValue(new_position)
+
+            time.sleep(0.1)
+        return
+
+    def add_local(self):
+        file_dialog = Qtw.QFileDialog()
+        file_dialog.setFileMode(Qtw.QFileDialog.FileMode.ExistingFiles)
+        selected_files = file_dialog.getOpenFileNames()[0]
+        if selected_files:
+            self.library.preprocess_files(selected_files)
+
