@@ -59,6 +59,9 @@ class LibrespotPlayer:
         except Exception:
             pass
 
+    def get_current_position_ms(self):
+        return self._current_position
+
     def get_position(self):
         self._current_position += 100  # tick in approx. 100 millis
         return int((self._current_position / self._track_duration) * 1000) if self._track_duration else 0

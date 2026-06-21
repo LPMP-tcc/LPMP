@@ -102,6 +102,7 @@ class AlbumDetailViewTrackItem(Qtw.QWidget):
         h_layout = Qtw.QHBoxLayout()
         self.setLayout(h_layout)
 
+        self.track_info = track_info
         self.track = track_info["track"]
         self.track_typed = track_info.get("typed", "")
         self.track_artist = track_info.get("artist", "")
@@ -142,5 +143,6 @@ class AlbumDetailViewTrackItem(Qtw.QWidget):
 
     def mouseDoubleClickEvent(self, event):
         main_window = self.parent_widget.parent_widget
-        main_window.music_player.play(self.track, self.track_typed)
-        main_window.top_bar_widget.set_now_playing(self.track_name.text(), self.track_artist)
+        track_list = self.parent_widget.album_info["track_list"]
+        my_index = next((i for i, t in enumerate(track_list) if t["track"] == self.track), 0)
+        main_window.music_player.play(self.track_info, queue=track_list, queue_index=my_index)

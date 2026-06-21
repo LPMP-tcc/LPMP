@@ -74,9 +74,7 @@ class LocalSearchScrollWidget(Qtw.QScrollArea):
 
         def make_play_callback(t):
             def callback():
-                self.main_window.music_player.play(t['track'], t['typed'])
-                self.main_window.top_bar_widget.set_now_playing(
-                    t.get('title', ''), t.get('artist', ''))
+                self.main_window.music_player.play(t)
             return callback
 
         for _, score, idx in results:
@@ -238,11 +236,13 @@ class StreamingSearchScrollWidget(Qtw.QScrollArea):
         self._clear_grid()
 
         def make_play_callback(track_data):
-            track_id = track_data["uri"].split(":")[-1]
             def callback():
-                self.main_window.music_player.play(track_id, TrackType.SPOTIFY)
-                self.main_window.top_bar_widget.set_now_playing(
-                    track_data.get("title", ""), track_data.get("artist", ""))
+                self.main_window.music_player.play({
+                    "track": track_data["uri"].split(":")[-1],
+                    "typed": TrackType.SPOTIFY,
+                    "title": track_data.get("title", ""),
+                    "artist": track_data.get("artist", ""),
+                })
             return callback
 
         def make_add_callback(track_data, art_bytes):

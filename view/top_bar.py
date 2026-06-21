@@ -32,8 +32,10 @@ class TopBar(Qtw.QWidget):
         self.library = None
         self.is_shutting_down = False
 
+        self.back_button.clicked.connect(self._on_back_button_clicked)
         self.play_button.clicked.connect(self._on_play_button_clicked)
         self.pause_button.clicked.connect(self._on_pause_button_clicked)
+        self.next_button.clicked.connect(self._on_next_button_clicked)
 
         self.buttons_h_layout.addWidget(self.back_button)
         self.buttons_h_layout.addWidget(self.play_button)
@@ -87,12 +89,17 @@ class TopBar(Qtw.QWidget):
     def _on_volume_changed(self, value):
         self.music_player.set_volume(value)
 
+    def _on_back_button_clicked(self):
+        self.music_player.skip_backward()
+
     def _on_play_button_clicked(self):
         self.music_player.resume_all()
 
     def _on_pause_button_clicked(self):
         self.music_player.pause_all()
-        return
+
+    def _on_next_button_clicked(self):
+        self.music_player.skip_forward()
 
     def _update_seek_bar(self):
         while not self.is_shutting_down:
@@ -104,8 +111,14 @@ class TopBar(Qtw.QWidget):
                 new_position = self.music_player.get_new_slider_position(curr_slider_position)
                 self.seek_bar.setValue(new_position)
 
-            if self.music_player.is_playing and self.music_player.check_if_ended():
-                self.set_now_playing("", "")
+            if self.music_player.is_playing:
+                self.music_player.check_if_ended()
+
+            np = self.music_player.now_playing
+            self.set_now_playing(
+                np.get("title", "") if np else "",
+                np.get("artist", "") if np else "",
+            )
 
             time.sleep(0.1)
         return

@@ -40,6 +40,9 @@ class VlcPlayer:
     def get_position(self):
         return int(self._player.get_position() * 1000)
 
+    def get_current_position_ms(self):
+        return max(0, self._player.get_time())
+
     def seek_to(self, slider_position):
         self._player.set_position(slider_position / 1000)
 
