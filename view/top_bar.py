@@ -104,7 +104,7 @@ class TopBar(Qtw.QWidget):
                 new_position = self.music_player.get_new_slider_position(curr_slider_position)
                 self.seek_bar.setValue(new_position)
 
-            if (self.music_player.is_vlc_playing or self.music_player.is_spotify_playing) and self.music_player.check_if_ended():
+            if self.music_player.is_playing and self.music_player.check_if_ended():
                 self.set_now_playing("", "")
 
             time.sleep(0.1)

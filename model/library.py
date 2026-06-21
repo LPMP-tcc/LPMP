@@ -6,6 +6,8 @@ from mutagen.mp4 import MP4
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
 
+from model.track_type import TrackType
+
 DATABASE_PATH = "library.db"
 
 class Library:
@@ -20,8 +22,8 @@ class Library:
         self._load_full_library()
 
     def _load_full_library(self):
-        self.db_cursor.execute('''CREATE TABLE IF NOT EXISTS library 
-        (track text, typed text, title text, number integer, text duration, artist text, album_arist text, album text, date text, composers text, genres text, og_metadata text)''')
+        self.db_cursor.execute('''CREATE TABLE IF NOT EXISTS library
+        (track text, typed text CHECK(typed IN ('MP3', 'FLAC', 'M4A', 'SPOTIFY')), title text, number integer, text duration, artist text, album_arist text, album text, date text, composers text, genres text, og_metadata text)''')
 
         self.db_connection.commit()
 
@@ -32,7 +34,7 @@ class Library:
     def _row_tuple_into_dict(self, row):
         (track, typed, title, number, duration, artist, album_artist, album, date, composers, genres, og_metadata) = row
         return {"track": track,
-                "typed": typed,
+                "typed": TrackType(typed),
                 "title": title,
                 "number": number,
                 "duration": duration,
@@ -77,23 +79,24 @@ class Library:
 
     def get_art(self, track, typed):
         try:
-            if typed == "MP3":
-                frames = ID3(track).getall("APIC")
-                if frames:
-                    return frames[0].data
-            elif typed == "M4A":
-                m_dict = mutagen.File(track)
-                for key in m_dict:
-                    if "covr" in key:
-                        return m_dict["covr"][0]
-            elif typed == "FLAC":
-                pictures = FLAC(track).pictures
-                if pictures:
-                    return pictures[0].data
-            elif typed == "SPOTIFY":
-                art_path = os.path.join("spotify_art", f"{track}.jpg")
-                with open(art_path, "rb") as f:
-                    return f.read()
+            match typed:
+                case TrackType.MP3:
+                    frames = ID3(track).getall("APIC")
+                    if frames:
+                        return frames[0].data
+                case TrackType.M4A:
+                    m_dict = mutagen.File(track)
+                    for key in m_dict:
+                        if "covr" in key:
+                            return m_dict["covr"][0]
+                case TrackType.FLAC:
+                    pictures = FLAC(track).pictures
+                    if pictures:
+                        return pictures[0].data
+                case TrackType.SPOTIFY:
+                    art_path = os.path.join("spotify_art", f"{track}.jpg")
+                    with open(art_path, "rb") as f:
+                        return f.read()
         except Exception as e:
             print(e)
         return self.get_placeholder_art()
@@ -119,14 +122,14 @@ class Library:
         og_metadata = json.dumps(serializable_data)
 
         new_track = {
-            "track": track_id, "typed": "SPOTIFY",
+            "track": track_id, "typed": TrackType.SPOTIFY,
             "title": title, "number": number, "duration": duration,
             "artist": artist, "album_artist": artist,
             "album": album, "date": date,
             "composers": "", "genres": "",
             "og_metadata": og_metadata,
         }
-        self._persist_to_library(track_id, "SPOTIFY", title, number, duration,
+        self._persist_to_library(track_id, TrackType.SPOTIFY, title, number, duration,
                                 artist, artist, album, date, "", "", og_metadata)
         self.library.append(new_track)
         self._notify_changes_to_main_window()
@@ -152,7 +155,7 @@ class Library:
                 self._add_m4a(file, m_dict)
 
     def _add_m4a(self, file, m_dict):
-        new_track = {"track": file, "typed": "M4A"}
+        new_track = {"track": file, "typed": TrackType.M4A}
 
         title = None
         number = None
@@ -196,12 +199,12 @@ class Library:
         duration = mp4.info.length
         new_track["duration"] = duration
 
-        self._persist_to_library(file, "M4A", title, number, duration, artist, album_artist, album, date, composers, genres, None)
+        self._persist_to_library(file, TrackType.M4A, title, number, duration, artist, album_artist, album, date, composers, genres, None)
         self.library.append(new_track)
         self._notify_changes_to_main_window()
 
     def _add_mp3(self, file, m_dict):
-        new_track = {"track": file, "typed": "MP3"}
+        new_track = {"track": file, "typed": TrackType.MP3}
 
         title = None
         number = None
@@ -240,12 +243,12 @@ class Library:
         duration = mp3.info.length
         new_track["duration"] = duration
 
-        self._persist_to_library(file, "MP3", title, number, duration, artist, album_artist, album, date, composers, genres,None)
+        self._persist_to_library(file, TrackType.MP3, title, number, duration, artist, album_artist, album, date, composers, genres, None)
         self.library.append(new_track)
         self._notify_changes_to_main_window()
 
     def _add_flac(self, file, m_dict):
-        new_track = {"track": file, "typed": "FLAC"}
+        new_track = {"track": file, "typed": TrackType.FLAC}
 
         title = None
         number = None
@@ -287,13 +290,13 @@ class Library:
         duration = flac.info.length
         new_track["duration"] = duration
 
-        self._persist_to_library(file, "FLAC", title, number, duration, artist, album_artist, album, date, composers, genres, None)
+        self._persist_to_library(file, TrackType.FLAC, title, number, duration, artist, album_artist, album, date, composers, genres, None)
         self.library.append(new_track)
         self._notify_changes_to_main_window()
 
 # TrackData: dict
 ##  track: String, either a Spotify ID or a path
-##  typed: String, either "MP3", "FLAC", "M4A", or "SPOTIFY"
+##  typed: TrackType
 ##  title: String, track name
 ##  number: Int, track number
 ##  duration: String, track duration
