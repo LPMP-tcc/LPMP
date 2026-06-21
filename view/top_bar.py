@@ -22,7 +22,7 @@ class TopBar(Qtw.QWidget):
         self.next_button = Qtw.QPushButton(">>")
 
         self.dummy_mid_display = Qtw.QFrame()
-        self.song_title_text = Qtw.QLabel("Song Title - Artist Title")
+        self.song_title_text = Qtw.QLabel("")
         self.seek_bar = Qtw.QSlider()
         self.dummy_mid_display_v_layout = Qtw.QVBoxLayout()
 
@@ -32,8 +32,8 @@ class TopBar(Qtw.QWidget):
         self.library = None
         self.is_shutting_down = False
 
-        self.play_button.clicked.connect(self.on_play_button_clicked)
-        self.pause_button.clicked.connect(self.on_pause_button_clicked)
+        self.play_button.clicked.connect(self._on_play_button_clicked)
+        self.pause_button.clicked.connect(self._on_pause_button_clicked)
 
         self.buttons_h_layout.addWidget(self.back_button)
         self.buttons_h_layout.addWidget(self.play_button)
@@ -56,7 +56,7 @@ class TopBar(Qtw.QWidget):
         # where to put this?
         self.temp_right_v_layout = Qtw.QVBoxLayout()
         self.add_button = Qtw.QPushButton("+")
-        self.add_button.clicked.connect(self.add_local)
+        self.add_button.clicked.connect(self._add_local)
         self.search_button = Qtw.QPushButton("\uDD0D")
         self.search_button.clicked.connect(self.parent_widget.toggle_search_view)
         self.temp_right_v_layout.addWidget(self.add_button)
@@ -69,22 +69,32 @@ class TopBar(Qtw.QWidget):
 
         self.music_player = music_player
         self.library = library
+        self.volume_slider.valueChanged.connect(self._on_volume_changed)
 
-        seek_bar_thread = threading.Thread(target=self.update_seek_bar)
+        seek_bar_thread = threading.Thread(target=self._update_seek_bar, daemon=True)
         seek_bar_thread.start()
 
     def set_is_shutting_down(self, boolean):
         self.is_shutting_down = boolean
         return
 
-    def on_play_button_clicked(self):
-        pass
+    def set_now_playing(self, title, artist):
+        if title or artist:
+            self.song_title_text.setText(f"{title} - {artist}")
+        else:
+            self.song_title_text.setText("")
 
-    def on_pause_button_clicked(self):
+    def _on_volume_changed(self, value):
+        self.music_player.set_volume(value)
+
+    def _on_play_button_clicked(self):
+        self.music_player.resume_all()
+
+    def _on_pause_button_clicked(self):
         self.music_player.pause_all()
         return
 
-    def update_seek_bar(self):
+    def _update_seek_bar(self):
         while not self.is_shutting_down:
             curr_slider_position = self.seek_bar.value()
 
@@ -94,10 +104,13 @@ class TopBar(Qtw.QWidget):
                 new_position = self.music_player.get_new_slider_position(curr_slider_position)
                 self.seek_bar.setValue(new_position)
 
+            if (self.music_player.is_vlc_playing or self.music_player.is_spotify_playing) and self.music_player.check_if_ended():
+                self.set_now_playing("", "")
+
             time.sleep(0.1)
         return
 
-    def add_local(self):
+    def _add_local(self):
         file_dialog = Qtw.QFileDialog()
         file_dialog.setFileMode(Qtw.QFileDialog.FileMode.ExistingFiles)
         selected_files = file_dialog.getOpenFileNames()[0]

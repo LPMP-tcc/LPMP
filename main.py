@@ -10,7 +10,7 @@ class Application:
 
     def __init__(self):
         self.qt_app = Qtw.QApplication(sys.argv)
-        dummy = Qtw.QWidget() # needed because Qt fucking sucks
+        dummy = Qtw.QWidget() # needed because Qt is an inscrutable mess
 
         from model.music_player import MusicPlayer
         from model.library import Library

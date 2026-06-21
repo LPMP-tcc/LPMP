@@ -1,4 +1,4 @@
-import sqlite3, mutagen, re, io
+import sqlite3, mutagen, re, io, os, json
 
 from PIL import Image
 from mutagen.id3 import ID3
@@ -17,19 +17,19 @@ class Library:
     def __init__(self):
         self.db_connection = sqlite3.connect(DATABASE_PATH)
         self.db_cursor = self.db_connection.cursor()
-        self.load_full_library()
+        self._load_full_library()
 
-    def load_full_library(self):
+    def _load_full_library(self):
         self.db_cursor.execute('''CREATE TABLE IF NOT EXISTS library 
         (track text, typed text, title text, number integer, text duration, artist text, album_arist text, album text, date text, composers text, genres text, og_metadata text)''')
 
         self.db_connection.commit()
 
         for row in self.db_cursor.execute('''SELECT * FROM library'''):
-            self.library.append(self.row_tuple_into_dict(row))
+            self.library.append(self._row_tuple_into_dict(row))
         return
 
-    def row_tuple_into_dict(self, row):
+    def _row_tuple_into_dict(self, row):
         (track, typed, title, number, duration, artist, album_artist, album, date, composers, genres, og_metadata) = row
         return {"track": track,
                 "typed": typed,
@@ -44,7 +44,7 @@ class Library:
                 "genres": genres,
                 "og_metadata": og_metadata}
 
-    def persist_to_library(self, track, typed, title, number, duration, artist, album_artist, album, date, composers, genres, og_metadata):
+    def _persist_to_library(self, track, typed, title, number, duration, artist, album_artist, album, date, composers, genres, og_metadata):
         self.db_cursor.execute('''INSERT INTO library VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                                (track, typed, title, number, duration, artist, album_artist, album, date, composers, genres,
                                 og_metadata))
@@ -59,7 +59,7 @@ class Library:
     def pair_with_main_window(self, main_window):
         self.main_window = main_window
 
-    def notify_changes_to_main_window(self):
+    def _notify_changes_to_main_window(self):
         self.main_window.notify_changes()
 
     def get_album_info(self, album_title, artist):
@@ -76,27 +76,60 @@ class Library:
                 "track_list": sorted_list}
 
     def get_art(self, track, typed):
-        image_bytes = None
         try:
             if typed == "MP3":
-                image_bytes = ID3(track).getall("APIC")[0].data
-                return image_bytes
+                frames = ID3(track).getall("APIC")
+                if frames:
+                    return frames[0].data
             elif typed == "M4A":
                 m_dict = mutagen.File(track)
                 for key in m_dict:
                     if "covr" in key:
-                        image_bytes = m_dict["covr"][0]
-                        return image_bytes
+                        return m_dict["covr"][0]
             elif typed == "FLAC":
-                image_bytes = FLAC(track).pictures[0].data
-                return image_bytes
+                pictures = FLAC(track).pictures
+                if pictures:
+                    return pictures[0].data
+            elif typed == "SPOTIFY":
+                art_path = os.path.join("spotify_art", f"{track}.jpg")
+                with open(art_path, "rb") as f:
+                    return f.read()
         except Exception as e:
             print(e)
-            return self.get_placeholder_art()
-        if image_bytes is None:
-            return self.get_placeholder_art()
-        print("Something went wrong loading art for track " + track)
-        return None
+        return self.get_placeholder_art()
+
+    def add_spotify_track(self, track_data, art_bytes):
+        track_id = track_data["uri"].split(":")[-1]
+        if any(t["track"] == track_id for t in self.library):
+            return
+
+        os.makedirs("spotify_art", exist_ok=True)
+        art_path = os.path.join("spotify_art", f"{track_id}.jpg")
+        with open(art_path, "wb") as f:
+            f.write(art_bytes)
+
+        title       = track_data.get("title", "")
+        artist      = track_data.get("artist", "")
+        album       = track_data.get("album", "")
+        number      = track_data.get("track_number", 0)
+        duration    = track_data.get("duration_ms", 0) / 1000.0
+        date        = track_data.get("release_date", "")
+        serializable_data = dict(track_data)
+        del serializable_data["art"]
+        og_metadata = json.dumps(serializable_data)
+
+        new_track = {
+            "track": track_id, "typed": "SPOTIFY",
+            "title": title, "number": number, "duration": duration,
+            "artist": artist, "album_artist": artist,
+            "album": album, "date": date,
+            "composers": "", "genres": "",
+            "og_metadata": og_metadata,
+        }
+        self._persist_to_library(track_id, "SPOTIFY", title, number, duration,
+                                artist, artist, album, date, "", "", og_metadata)
+        self.library.append(new_track)
+        self._notify_changes_to_main_window()
 
     def get_placeholder_art(self):
         with open("music_ph.png", "rb") as file:
@@ -112,13 +145,13 @@ class Library:
 
             m_dict = mutagen.File(file)
             if match.group(1):
-                self.add_flac(file, m_dict)
+                self._add_flac(file, m_dict)
             elif match.group(2):
-                self.add_mp3(file, m_dict)
+                self._add_mp3(file, m_dict)
             elif match.group(3):
-                self.add_m4a(file, m_dict)
+                self._add_m4a(file, m_dict)
 
-    def add_m4a(self, file, m_dict):
+    def _add_m4a(self, file, m_dict):
         new_track = {"track": file, "typed": "M4A"}
 
         title = None
@@ -158,18 +191,16 @@ class Library:
                 number = int(number)
                 new_track["number"] = number
 
-        #im = Image.open(io.BytesIO(pict))
-        #im.show()
 
         mp4 = MP4(file)
         duration = mp4.info.length
         new_track["duration"] = duration
 
-        self.persist_to_library(file, "M4A", title, number, duration, artist, album_artist, album, date, composers, genres, None)
+        self._persist_to_library(file, "M4A", title, number, duration, artist, album_artist, album, date, composers, genres, None)
         self.library.append(new_track)
-        self.notify_changes_to_main_window()
+        self._notify_changes_to_main_window()
 
-    def add_mp3(self, file, m_dict):
+    def _add_mp3(self, file, m_dict):
         new_track = {"track": file, "typed": "MP3"}
 
         title = None
@@ -209,15 +240,11 @@ class Library:
         duration = mp3.info.length
         new_track["duration"] = duration
 
-        self.persist_to_library(file, "MP3", title, number, duration, artist, album_artist, album, date, composers, genres,None)
+        self._persist_to_library(file, "MP3", title, number, duration, artist, album_artist, album, date, composers, genres,None)
         self.library.append(new_track)
-        self.notify_changes_to_main_window()
+        self._notify_changes_to_main_window()
 
-        #pict = tags.getall('APIC')[0].data
-        #im = Image.open(BytesIO(pict))
-        #im.show()
-
-    def add_flac(self, file, m_dict):
+    def _add_flac(self, file, m_dict):
         new_track = {"track": file, "typed": "FLAC"}
 
         title = None
@@ -260,9 +287,9 @@ class Library:
         duration = flac.info.length
         new_track["duration"] = duration
 
-        self.persist_to_library(file, "FLAC", title, number, duration, artist, album_artist, album, date, composers, genres, None)
+        self._persist_to_library(file, "FLAC", title, number, duration, artist, album_artist, album, date, composers, genres, None)
         self.library.append(new_track)
-        self.notify_changes_to_main_window()
+        self._notify_changes_to_main_window()
 
 # TrackData: dict
 ##  track: String, either a Spotify ID or a path
