@@ -1,11 +1,7 @@
 import threading, time
 
 import PySide6.QtCore as Qtc
-import PySide6.QtGui as Qtg
 import PySide6.QtWidgets as Qtw
-
-from model.music_player import MusicPlayer # is this necessary?
-from model.library import Library
 
 class TopBar(Qtw.QWidget):
     def __init__(self, music_player, library, parent_widget):
@@ -20,6 +16,11 @@ class TopBar(Qtw.QWidget):
         self.play_button = Qtw.QPushButton("\u25B6")
         self.pause_button = Qtw.QPushButton("\u25AE\u200A\u25AE")
         self.next_button = Qtw.QPushButton(">>")
+
+        self.back_button.setToolTip("Backtrack")
+        self.play_button.setToolTip("Play")
+        self.pause_button.setToolTip("Pause")
+        self.next_button.setToolTip("Next Track")
 
         self.dummy_mid_display = Qtw.QFrame()
         self.song_title_text = Qtw.QLabel("")
@@ -57,12 +58,13 @@ class TopBar(Qtw.QWidget):
 
         # where to put this?
         self.temp_right_v_layout = Qtw.QVBoxLayout()
-        self.add_button = Qtw.QPushButton("+")
+        self.add_button = Qtw.QPushButton()
+        self.add_button.setIcon(self.style().standardIcon(Qtw.QStyle.StandardPixmap.SP_DirOpenIcon))
+        self.add_button.setIconSize(Qtc.QSize(28, 28))
+        self.add_button.setFixedSize(40, 40)
         self.add_button.clicked.connect(self._add_local)
-        self.search_button = Qtw.QPushButton("\uDD0D")
-        self.search_button.clicked.connect(self.parent_widget.toggle_search_view)
+        self.add_button.setToolTip("Add local files")
         self.temp_right_v_layout.addWidget(self.add_button)
-        self.temp_right_v_layout.addWidget(self.search_button)
 
         self.h_layout.addLayout(self.buttons_h_layout)
         self.h_layout.addWidget(self.dummy_mid_display)
@@ -78,7 +80,6 @@ class TopBar(Qtw.QWidget):
 
     def set_is_shutting_down(self, boolean):
         self.is_shutting_down = boolean
-        return
 
     def set_now_playing(self, title, artist):
         if title or artist:
@@ -114,14 +115,13 @@ class TopBar(Qtw.QWidget):
             if self.music_player.is_playing:
                 self.music_player.check_if_ended()
 
-            np = self.music_player.now_playing
+            now_playing = self.music_player.now_playing
             self.set_now_playing(
-                np.get("title", "") if np else "",
-                np.get("artist", "") if np else "",
+                now_playing.get("title", "") if now_playing else "",
+                now_playing.get("artist", "") if now_playing else "",
             )
 
             time.sleep(0.1)
-        return
 
     def _add_local(self):
         file_dialog = Qtw.QFileDialog()

@@ -2,69 +2,57 @@ import PySide6.QtCore as Qtc
 import PySide6.QtGui as Qtg
 import PySide6.QtWidgets as Qtw
 
-from view.widgets import ElidedLabel
+from model.filters import SortFilter
+from view.metadata_edit_dialog import AlbumMetadataEditDialog
+from view.custom_widgets import ArtArea, ElidedLabel
 
 
 class AlbumGridViewWidget(Qtw.QScrollArea):
-    grid_layout = Qtw.QGridLayout()
-    inner_widget = None
-    current_selection = None
-    current_view_query = {}
-    widget_list = []
-
     def __init__(self, parent):
         super().__init__()
-        self.parent_widget = parent
+        self.parent_widget      = parent
+        self.inner_widget       = None
+        self.current_selection  = None
+        self.current_view_query = {}
+        self.widget_list        = []
+        self._dirty             = False
         self.setStyleSheet("background-color:white")
         self.update_view(None)
 
     def update_view(self, new_query):
+        self.current_selection = None   # old tile objects are about to be replaced
         self._generate_widget_list(new_query)
         self.populate_grid()
 
     def _generate_widget_list(self, new_query):
-        if new_query is None:
-            new_query = self.current_view_query
-
-        # ignore the query for now, just generate all tiles
         self._set_widget_list(self._generate_album_tiles())
 
     def _generate_album_tiles(self):
-        album_set = set()
-        for track_info in self.parent_widget.library.library:
-            album_set.add((track_info["album"], track_info["artist"]))
-
-        widget_list = []
-        for item in album_set:
-            (album, artist) = item
-            album_info = self.parent_widget.library.get_album_info(album, artist)
-            art = album_info["art"]
-            widget_list.append(AlbumTile(self, album, artist, art))
-        return widget_list
+        summaries = self.parent_widget.library.get_all_album_summaries()
+        sorted_summaries = SortFilter('artist', 'date').apply(summaries)
+        return [AlbumTile(self, s["album_title"], s["artist"], s["art"])
+                for s in sorted_summaries]
 
     def _set_widget_list(self, new_widget_list):
         self.widget_list = new_widget_list
 
     def populate_grid(self):
-        # clean it first
-        for widget in self.widget_list:
-            self.grid_layout.removeWidget(widget)
+        grid = Qtw.QGridLayout()
 
-        # TODO: do away with this magic number/consider margins better
         if self.widget_list:
-            columns = int(self.width()/218) + 1
-            lines = int(len(self.widget_list) / columns) + 1
-            count = 0
-            for i in range(lines):
-                for j in range(columns):
-                    self.grid_layout.addWidget(self.widget_list[count],i+1,j+1)
-                    if count == len(self.widget_list)-1:
-                        break
-                    else:
-                        count += 1
+            columns = max(1, self.viewport().width() // 218)
+            for col in range(columns):
+                grid.setColumnStretch(col, 1)
+            for idx, tile in enumerate(self.widget_list):
+                grid.addWidget(
+                    tile,
+                    idx // columns,
+                    idx % columns,
+                    Qtc.Qt.AlignmentFlag.AlignHCenter | Qtc.Qt.AlignmentFlag.AlignTop,
+                )
 
         self.inner_widget = Qtw.QWidget()
-        self.inner_widget.setLayout(self.grid_layout)
+        self.inner_widget.setLayout(grid)
         self.setWidget(self.inner_widget)
 
     def change_selection(self, new_selection):
@@ -75,6 +63,9 @@ class AlbumGridViewWidget(Qtw.QScrollArea):
         if self.current_selection:
             self.current_selection.select_tile()
 
+    def mark_dirty(self):
+        self._dirty = True
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.populate_grid()
@@ -83,13 +74,29 @@ class AlbumGridViewWidget(Qtw.QScrollArea):
         super().mousePressEvent(event)
         self.change_selection(None)
 
-    # populate on show to consider correct dimensions
     def showEvent(self, event):
         super().showEvent(event)
-        self.populate_grid()
+        if self._dirty:
+            self._dirty = False
+            self.update_view(None)   # full refresh
+        else:
+            self.populate_grid()     # re-layout only
 
     def open_album_detail_view(self):
         self.parent_widget.change_to_album_detail_view(self.current_selection)
+
+
+class CustomGridView(AlbumGridViewWidget):
+
+    def __init__(self, parent, pipeline):
+        self._pipeline = pipeline   # must be set before super().__init__ triggers _generate_album_tiles
+        super().__init__(parent)
+
+    def _generate_album_tiles(self):
+        summaries = self.parent_widget.library.get_all_album_summaries()
+        filtered = self._pipeline.apply(summaries)
+        return [AlbumTile(self, s["album_title"], s["artist"], s["art"])
+                for s in filtered]
 
 
 class AlbumTile(Qtw.QWidget):
@@ -102,13 +109,13 @@ class AlbumTile(Qtw.QWidget):
         self.album_title = name
         self.artist = artist
 
-        self.art_area = Qtw.QLabel()
-        self.art_area.setFixedWidth(200)
-        self.art_area.setFixedHeight(200)
-        self.art_area.setScaledContents(True)
+        self.setFocusPolicy(Qtc.Qt.FocusPolicy.ClickFocus)
+
+        self.art_area = ArtArea(show_add=False)
         pixmap = Qtg.QPixmap()
         pixmap.loadFromData(art)
         self.art_area.setPixmap(pixmap)
+        self.art_area.play_button.clicked.connect(self._play_album)
 
         name_text = ElidedLabel(name)
         name_text.setAlignment(Qtc.Qt.AlignmentFlag.AlignCenter)
@@ -118,6 +125,13 @@ class AlbumTile(Qtw.QWidget):
         v_layout.addWidget(self.art_area)
         v_layout.addWidget(name_text)
         v_layout.addWidget(artist_text)
+
+    def _play_album(self):
+        main = self.parent_widget.parent_widget
+        album_info = main.library.get_album_info(self.album_title, self.artist)
+        tracks = album_info.get('track_list', [])
+        if tracks:
+            main.music_player.play(tracks[0], queue=tracks, queue_index=0)
 
     def set_parent_widget(self, parent):
         self.parent_widget = parent
@@ -130,8 +144,43 @@ class AlbumTile(Qtw.QWidget):
         self.is_selected = True
         self.art_area.setStyleSheet("border: 2px solid blue")
 
+    def _remove_album(self):
+        library = self.parent_widget.parent_widget.library
+        library.remove_album(self.album_title, self.artist)
+
+    def _edit_album_metadata(self):
+        library = self.parent_widget.parent_widget.library
+        info = library.get_album_info(self.album_title, self.artist)
+        tracks = info['track_list']
+        dialog = AlbumMetadataEditDialog(tracks, self)
+        if dialog.exec() == Qtw.QDialog.DialogCode.Accepted:
+            updates = dialog.get_values()
+            if updates:
+                for i, track in enumerate(tracks):
+                    library.update_track_metadata(
+                        track['track'], updates,
+                        notify=(i == len(tracks) - 1),
+                    )
+
     def mousePressEvent(self, event):
         self.parent_widget.change_selection(self)
+        self.setFocus()
 
     def mouseDoubleClickEvent(self, event):
         self.parent_widget.open_album_detail_view()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qtc.Qt.Key.Key_Delete, Qtc.Qt.Key.Key_Backspace):
+            self._remove_album()
+        else:
+            super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = Qtw.QMenu(self)
+        edit_action   = menu.addAction("Edit album metadata")
+        remove_action = menu.addAction("Remove from library")
+        chosen = menu.exec(event.globalPos())
+        if chosen is edit_action:
+            self._edit_album_metadata()
+        elif chosen is remove_action:
+            self._remove_album()

@@ -3,9 +3,10 @@ import PySide6.QtWidgets as Qtw
 
 
 class ArtArea(Qtw.QLabel):
-    def __init__(self, show_add=True, parent=None):
+    def __init__(self, show_add=True, show_play=True, parent=None):
         super().__init__(parent)
         self._show_add = show_add
+        self._show_play = show_play
         self.setFixedWidth(200)
         self.setFixedHeight(200)
         self.setScaledContents(True)
@@ -24,7 +25,8 @@ class ArtArea(Qtw.QLabel):
         super().enterEvent(event)
         if self._show_add:
             self.add_button.show()
-        self.play_button.show()
+        if self._show_play:
+            self.play_button.show()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
@@ -43,3 +45,4 @@ class ElidedLabel(Qtw.QLabel):
         super().resizeEvent(event)
         elided = self.fontMetrics().elidedText(self._full_text, Qtc.Qt.TextElideMode.ElideRight, self.width())
         super().setText(elided)
+        self.setToolTip(self._full_text if elided != self._full_text else "")

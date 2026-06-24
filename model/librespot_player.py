@@ -10,26 +10,37 @@ class LibrespotPlayer:
         self._current_position = 0
         self._token = None
         self._token_expiry = 0.0
+        self._maybe_ended_at = None
 
     def play(self, track_id):
+        print(f"[librespot] play: track_id={track_id} (is_playing={self.is_playing})")
         threading.Thread(target=self._play_async, args=(track_id,), daemon=True).start()
 
     def _play_async(self, track_id):
         self._current_position = 0
+        self._track_duration = 0  # keeps check_if_ended from firing before duration is known
+        self._maybe_ended_at = None
+        print(f"[librespot] _play_async: sending play for {track_id}")
         try:
             requests.post(f"{LIBRESPOT_URL}/player/play",
                           json={"uri": f"spotify:track:{track_id}", "paused": False})
         except Exception as e:
             print(f"[librespot] play request failed: {e}")
             return
-        try:
-            self._track_duration = requests.get(f"{LIBRESPOT_URL}/status").json()["track"]["duration"]
-        except Exception as e:
-            print(f"[librespot] could not get track duration: {e}")
-            self._track_duration = 0
         self.is_playing = True
+        print(f"[librespot] is_playing set to True for {track_id}")
+        try:
+            status = requests.get(f"{LIBRESPOT_URL}/status").json()
+            self._track_duration = status["track"]["duration"]
+            print(f"[librespot] track duration: {self._track_duration}ms")
+            if status.get("paused") and not status.get("stopped"):
+                print(f"[librespot] track loaded paused (race with auto-advance?), sending resume")
+                requests.post(f"{LIBRESPOT_URL}/player/resume")
+        except Exception as e:
+            print(f"[librespot] could not get track status: {e}")
 
     def pause(self):
+        print(f"[librespot] pause (was is_playing={self.is_playing})")
         threading.Thread(target=self._pause_request, daemon=True).start()
         self.is_playing = False
 
@@ -40,6 +51,7 @@ class LibrespotPlayer:
             print(f"[librespot] pause request failed: {e}")
 
     def resume(self):
+        print(f"[librespot] resume (was is_playing={self.is_playing})")
         self.is_playing = True
         threading.Thread(target=self._resume_request, daemon=True).start()
 
@@ -86,10 +98,41 @@ class LibrespotPlayer:
                 pass
 
     def check_if_ended(self):
-        if self.is_playing and self._track_duration > 0:
-            if self._current_position >= self._track_duration:
+        if not self.is_playing or self._track_duration <= 0:
+            return False
+        if self._current_position < self._track_duration:
+            return False
+
+        now = time.time()
+        if self._maybe_ended_at is None:
+            self._maybe_ended_at = now
+
+        try:
+            status  = requests.get(f"{LIBRESPOT_URL}/status").json()
+            stopped = status.get("stopped", False)
+            track   = status.get("track")
+            if track:
+                actual_pos    = track.get("position", 0)
+                actual_dur    = track.get("duration", self._track_duration)
+                paused        = status.get("paused", False)
+                reset_to_zero = paused and actual_pos < 2000
+                print(f"[librespot] check_if_ended: librespot pos={actual_pos}ms dur={actual_dur}ms "
+                      f"stopped={stopped} paused={paused} reset_to_zero={reset_to_zero}")
+                if stopped or reset_to_zero:
+                    print(f"[librespot] check_if_ended: confirmed ended")
+                    self._maybe_ended_at = None
+                    self.is_playing = False
+                    return True
+            elif stopped:
+                print(f"[librespot] check_if_ended: stopped (no track in status)")
+                self._maybe_ended_at = None
                 self.is_playing = False
                 return True
+            else:
+                print(f"[librespot] check_if_ended: status check failed: no track and not stopped")
+        except Exception as e:
+            print(f"[librespot] check_if_ended: status request failed: {e}")
+
         return False
 
     def search(self, query, limit=7):
@@ -106,6 +149,38 @@ class LibrespotPlayer:
             return r.json()
         except Exception as e:
             print(f"[librespot] search exception: {e}")
+            return None
+
+    def search_albums(self, query, limit=5):
+        try:
+            token = self._get_token()
+            r = requests.get(
+                "https://api.spotify.com/v1/search",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"q": query, "type": "album", "limit": limit},
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            print(f"[librespot] search_albums exception: {e}")
+            return None
+
+    def get_album_tracks(self, album_id):
+        try:
+            token = self._get_token()
+            all_items = []
+            url = f"https://api.spotify.com/v1/albums/{album_id}/tracks"
+            params = {"limit": 50, "offset": 0}
+            while url:
+                r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, params=params)
+                r.raise_for_status()
+                page = r.json()
+                all_items.extend(page.get("items", []))
+                url = page.get("next")
+                params = {}
+            return {"items": all_items}
+        except Exception as e:
+            print(f"[librespot] get_album_tracks exception: {e}")
             return None
 
     def _get_token(self):
