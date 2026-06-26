@@ -124,9 +124,15 @@ class TopBar(Qtw.QWidget):
             time.sleep(0.1)
 
     def _add_local(self):
-        file_dialog = Qtw.QFileDialog()
-        file_dialog.setFileMode(Qtw.QFileDialog.FileMode.ExistingFiles)
-        selected_files = file_dialog.getOpenFileNames()[0]
-        if selected_files:
-            self.library.preprocess_files(selected_files)
+        dialog = Qtw.QFileDialog(self)
+        dialog.setFileMode(Qtw.QFileDialog.FileMode.Directory)
+        # Non-native dialog so files and folders can both be multi-selected.
+        dialog.setOption(Qtw.QFileDialog.Option.DontUseNativeDialog, True)
+        for view in dialog.findChildren(Qtw.QListView) + dialog.findChildren(Qtw.QTreeView):
+            view.setSelectionMode(Qtw.QAbstractItemView.SelectionMode.ExtendedSelection)
+
+        if dialog.exec():
+            selected = dialog.selectedFiles()
+            if selected:
+                self.library.preprocess_files(selected)
 

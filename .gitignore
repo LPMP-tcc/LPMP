@@ -4,3 +4,4 @@ CLAUDE.md
 model/__pycache__/*
 view/__pycache__/*
 spotify_art/
+misc/

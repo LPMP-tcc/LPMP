@@ -212,6 +212,8 @@ class LocalSearchTile(Qtw.QWidget):
             album_text.setAlignment(Qtc.Qt.AlignmentFlag.AlignCenter)
             v_layout.addWidget(album_text)
 
+        v_layout.addStretch()
+
     def deselect_tile(self):
         self.is_selected = False
         self.art_area.setStyleSheet("border: 0px")

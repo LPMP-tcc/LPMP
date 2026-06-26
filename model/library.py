@@ -9,6 +9,9 @@ from model.track_type import TrackType
 
 DATABASE_PATH = "library.db"
 
+# Supported local audio extensions (case-insensitive).
+_SUPPORTED_AUDIO_RE = re.compile(r"\.(flac|mp3|m4a)$", re.IGNORECASE)
+
 
 class Library:
     db_connection = None
@@ -322,20 +325,43 @@ class Library:
             image_bytes = file.read()
         return image_bytes
 
-    def preprocess_files(self, files):
+    def preprocess_files(self, paths):
+        # paths may contain both files and directories; directories are scanned
+        # recursively for supported audio files.
+        files = self._collect_audio_files(paths)
+        existing = {t['track'] for t in self.library}
         for file in files:
-            match = re.search("(\\.flac$)|(\\.mp3$)|(\\.m4a$)", file)
+            if file in existing:
+                continue  # already in the library; skip
+
+            match = _SUPPORTED_AUDIO_RE.search(file)
             if not match:
                 print("Ignoring unsupported file type")
                 continue
 
+            existing.add(file)
             m_dict = mutagen.File(file)
-            if match.group(1):
+            ext = match.group(1).lower()
+            if ext == 'flac':
                 self._add_flac(file, m_dict)
-            elif match.group(2):
+            elif ext == 'mp3':
                 self._add_mp3(file, m_dict)
-            elif match.group(3):
+            elif ext == 'm4a':
                 self._add_m4a(file, m_dict)
+
+    @staticmethod
+    def _collect_audio_files(paths):
+        """Flatten files and directories into a list of supported audio files."""
+        collected = []
+        for path in paths:
+            if os.path.isdir(path):
+                for root, _dirs, names in os.walk(path):
+                    for name in names:
+                        if _SUPPORTED_AUDIO_RE.search(name):
+                            collected.append(os.path.join(root, name))
+            else:
+                collected.append(path)
+        return collected
 
     def _add_m4a(self, file, m_dict):
         new_track = {"track": file, "typed": TrackType.M4A}
