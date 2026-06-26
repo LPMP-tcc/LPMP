@@ -58,13 +58,25 @@ class TopBar(Qtw.QWidget):
 
         # where to put this?
         self.temp_right_v_layout = Qtw.QVBoxLayout()
-        self.add_button = Qtw.QPushButton()
-        self.add_button.setIcon(self.style().standardIcon(Qtw.QStyle.StandardPixmap.SP_DirOpenIcon))
-        self.add_button.setIconSize(Qtc.QSize(28, 28))
-        self.add_button.setFixedSize(40, 40)
-        self.add_button.clicked.connect(self._add_local)
-        self.add_button.setToolTip("Add local files")
-        self.temp_right_v_layout.addWidget(self.add_button)
+        self.temp_right_v_layout.setSpacing(2)
+
+        self.add_files_button = Qtw.QPushButton("+")
+        font = self.add_files_button.font()
+        font.setPointSize(14)
+        font.setBold(True)
+        self.add_files_button.setFont(font)
+        self.add_files_button.setFixedSize(40, 19)
+        self.add_files_button.clicked.connect(self._add_files)
+        self.add_files_button.setToolTip("Add files")
+        self.temp_right_v_layout.addWidget(self.add_files_button)
+
+        self.add_folder_button = Qtw.QPushButton()
+        self.add_folder_button.setIcon(self.style().standardIcon(Qtw.QStyle.StandardPixmap.SP_DirOpenIcon))
+        self.add_folder_button.setIconSize(Qtc.QSize(20, 20))
+        self.add_folder_button.setFixedSize(40, 19)
+        self.add_folder_button.clicked.connect(self._add_folder)
+        self.add_folder_button.setToolTip("Add folder")
+        self.temp_right_v_layout.addWidget(self.add_folder_button)
 
         self.h_layout.addLayout(self.buttons_h_layout)
         self.h_layout.addWidget(self.dummy_mid_display)
@@ -123,10 +135,16 @@ class TopBar(Qtw.QWidget):
 
             time.sleep(0.1)
 
-    def _add_local(self):
+    def _add_files(self):
+        files, _ = Qtw.QFileDialog.getOpenFileNames(
+            self, "Add Files", "", "Audio Files (*.mp3 *.flac *.m4a)"
+        )
+        if files:
+            self.library.preprocess_files(files)
+
+    def _add_folder(self):
         dialog = Qtw.QFileDialog(self)
         dialog.setFileMode(Qtw.QFileDialog.FileMode.Directory)
-        # Non-native dialog so files and folders can both be multi-selected.
         dialog.setOption(Qtw.QFileDialog.Option.DontUseNativeDialog, True)
         for view in dialog.findChildren(Qtw.QListView) + dialog.findChildren(Qtw.QTreeView):
             view.setSelectionMode(Qtw.QAbstractItemView.SelectionMode.ExtendedSelection)

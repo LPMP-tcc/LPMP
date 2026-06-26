@@ -1,5 +1,6 @@
 import sys
 
+import PySide6.QtCore as Qtc
 import PySide6.QtWidgets as Qtw
 
 class Application:
@@ -10,6 +11,7 @@ class Application:
 
     def __init__(self):
         self.qt_app = Qtw.QApplication(sys.argv)
+        self.qt_app.styleHints().setColorScheme(Qtc.Qt.ColorScheme.Light)
         dummy = Qtw.QWidget() # needed because Qt is an inscrutable mess
 
         from model.music_player import MusicPlayer

@@ -330,6 +330,8 @@ class Library:
         # recursively for supported audio files.
         files = self._collect_audio_files(paths)
         existing = {t['track'] for t in self.library}
+        new_tracks = []
+        db_rows = []
         for file in files:
             if file in existing:
                 continue  # already in the library; skip
@@ -343,11 +345,27 @@ class Library:
             m_dict = mutagen.File(file)
             ext = match.group(1).lower()
             if ext == 'flac':
-                self._add_flac(file, m_dict)
+                result = self._parse_flac(file, m_dict)
             elif ext == 'mp3':
-                self._add_mp3(file, m_dict)
+                result = self._parse_mp3(file, m_dict)
             elif ext == 'm4a':
-                self._add_m4a(file, m_dict)
+                result = self._parse_m4a(file, m_dict)
+            else:
+                continue
+            new_tracks.append(result[0])
+            db_rows.append(result[1])
+
+        if not new_tracks:
+            return
+
+        self.db_cursor.executemany(
+            '''INSERT INTO library (track, typed, title, number, duration, artist, album_artist, album, date, composers, genres, og_metadata, disc)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            db_rows,
+        )
+        self.db_connection.commit()
+        self.library.extend(new_tracks)
+        self._notify_changes_to_main_window()
 
     @staticmethod
     def _collect_audio_files(paths):
@@ -363,18 +381,10 @@ class Library:
                 collected.append(path)
         return collected
 
-    def _add_m4a(self, file, m_dict):
+    def _parse_m4a(self, file, m_dict):
         new_track = {"track": file, "typed": TrackType.M4A}
 
-        title = None
-        number = None
-        disc = None
-        artist = None
-        album_artist = None
-        album = None
-        date = None
-        composers = None
-        genres = None
+        title = number = disc = artist = album_artist = album = date = composers = genres = None
 
         for key in m_dict:
             if "©alb" == key:
@@ -407,33 +417,22 @@ class Library:
                 disc = int(disc_val) if disc_val else None
                 new_track["disc"] = disc
 
-        mp4 = MP4(file)
-        duration = mp4.info.length
+        duration = MP4(file).info.length
         new_track["duration"] = duration
 
-        self._persist_to_library(file, TrackType.M4A, title, number, duration, artist, album_artist, album, date, composers, genres, None, disc=disc)
-        self.library.append(new_track)
-        self._notify_changes_to_main_window()
+        return new_track, (file, TrackType.M4A, title, number, duration, artist, album_artist, album, date, composers, genres, None, disc)
 
-    def _add_mp3(self, file, m_dict):
+    def _parse_mp3(self, file, m_dict):
         new_track = {"track": file, "typed": TrackType.MP3}
 
-        title = None
-        number = None
-        disc = None
-        artist = None
-        album_artist = None
-        album = None
-        date = None
-        composers = None
-        genres = None
+        title = number = disc = artist = album_artist = album = date = composers = genres = None
 
         for key in m_dict:
             if "TIT2" == key:
                 title = m_dict["TIT2"][0]
                 new_track["title"] = title
             if "TALB" == key:
-                album =  m_dict["TALB"][0]
+                album = m_dict["TALB"][0]
                 new_track["album"] = album
             if "TPE1" == key:
                 artist = m_dict["TPE1"][0]
@@ -457,26 +456,15 @@ class Library:
                     disc = None
                 new_track["disc"] = disc
 
-        mp3 = MP3(file)
-        duration = mp3.info.length
+        duration = MP3(file).info.length
         new_track["duration"] = duration
 
-        self._persist_to_library(file, TrackType.MP3, title, number, duration, artist, album_artist, album, date, composers, genres, None, disc=disc)
-        self.library.append(new_track)
-        self._notify_changes_to_main_window()
+        return new_track, (file, TrackType.MP3, title, number, duration, artist, album_artist, album, date, composers, genres, None, disc)
 
-    def _add_flac(self, file, m_dict):
+    def _parse_flac(self, file, m_dict):
         new_track = {"track": file, "typed": TrackType.FLAC}
 
-        title = None
-        number = None
-        disc = None
-        artist = None
-        album_artist = None
-        album = None
-        date = None
-        composers = None
-        genres = None
+        title = number = disc = artist = album_artist = album = date = composers = genres = None
 
         for key in m_dict:
             if "album" == key:
@@ -513,13 +501,10 @@ class Library:
                 title = m_dict["title"][0]
                 new_track["title"] = title
 
-        flac = FLAC(file)
-        duration = flac.info.length
+        duration = FLAC(file).info.length
         new_track["duration"] = duration
 
-        self._persist_to_library(file, TrackType.FLAC, title, number, duration, artist, album_artist, album, date, composers, genres, None, disc=disc)
-        self.library.append(new_track)
-        self._notify_changes_to_main_window()
+        return new_track, (file, TrackType.FLAC, title, number, duration, artist, album_artist, album, date, composers, genres, None, disc)
 
 # TrackData: dict
 ##  track: String, either a Spotify ID or a path
